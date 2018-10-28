@@ -50,10 +50,27 @@ class MSP(object):
     def get_attitude(self):
         self._controller.write(self.construct_payload(108))
         payload = self.read_payload(108)
+        values = dict()
         if (payload):
-            roll = int.from_bytes(payload[0:2], byteorder='little', signed=True) / 10
-            pitch = int.from_bytes(payload[2:4], byteorder='little', signed=True) / 10
-            yaw = int.from_bytes(payload[4:6], byteorder='little', signed=False)
-            return roll,pitch,yaw
+            values['roll'] = int.from_bytes(payload[0:2], byteorder='little', signed=True) / 10
+            values['pitch'] = int.from_bytes(payload[2:4], byteorder='little', signed=True) / 10
+            values['yaw'] = int.from_bytes(payload[4:6], byteorder='little', signed=False)
+            return values
+        else:
+            raise RuntimeError("Controller has not responded.")
+    def get_gps(self):
+        self._controller.write(self.construct_payload(106))
+        payload = self.read_payload(106)
+        values = dict()
+        if (payload):
+            values['fix_type'] = int.from_bytes(payload[0:1], byteorder='little', signed=False)
+            values['sats'] = int.from_bytes(payload[1:2], byteorder='little', signed=False)
+            values['lat'] = int.from_bytes(payload[2:6], byteorder='little', signed=True) / 10000000
+            values['lon'] = int.from_bytes(payload[6:10], byteorder='little', signed=True) / 10000000
+            values['alt'] = int.from_bytes(payload[10:12], byteorder='little', signed=True)
+            values['groundSpeed'] = int.from_bytes(payload[12:14], byteorder='little', signed=False)
+            values['groundCourse'] = int.from_bytes(payload[14:16], byteorder='little', signed=False)
+            values['hdop'] = int.from_bytes(payload[16:18], byteorder='little', signed=False) / 100
+            return values
         else:
             raise RuntimeError("Controller has not responded.")
