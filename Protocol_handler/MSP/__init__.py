@@ -26,11 +26,10 @@ class MSP(object):
         #-------------
         return crc
     
-    def construct_payload(self,code: int):
+    def construct_payload(self,code: int,payload = bytes()):
         preamble = b'$X<' #MSP v2 Preamble
         flag = b'\x00' #uint8, flag, usage to be defined (set to zero)
         function = code.to_bytes(2, byteorder='little') #uint16 (little endian). 0 - 255 
-        payload = bytes()
         payload_size = len(payload).to_bytes(2, byteorder='little') #unit16
         ck = self.checksum(flag + function + payload_size + payload).to_bytes(1, byteorder='little') #unit8 checksum
         return preamble + flag + function + payload_size + payload + ck
@@ -46,31 +45,55 @@ class MSP(object):
                 if (ck == self.checksum(flag + function + payload_size + payload).to_bytes(1, byteorder='little')): #compare the checksum
                     return payload
         self._controller.flushInput()
-            
+        raise RuntimeError("Controller has not responded.")
+        
     def get_attitude(self):
-        self._controller.write(self.construct_payload(108))
-        payload = self.read_payload(108)
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(108)) #write the command
+        payload = self.read_payload(108) # get the payload
         values = dict()
-        if (payload):
-            values['roll'] = int.from_bytes(payload[0:2], byteorder='little', signed=True) / 10
-            values['pitch'] = int.from_bytes(payload[2:4], byteorder='little', signed=True) / 10
-            values['yaw'] = int.from_bytes(payload[4:6], byteorder='little', signed=False)
-            return values
-        else:
-            raise RuntimeError("Controller has not responded.")
-    def get_gps(self):
+        #deconstrunct the payload
+        values['roll'] = int.from_bytes(payload[0:2], byteorder='little', signed=True) / 10 #make int from the first 2 bytes 
+        values['pitch'] = int.from_bytes(payload[2:4], byteorder='little', signed=True) / 10
+        values['yaw'] = int.from_bytes(payload[4:6], byteorder='little', signed=False)
+        return values
+            
+    def get_raw_gps(self):
+        self._controller.flushInput()
         self._controller.write(self.construct_payload(106))
         payload = self.read_payload(106)
         values = dict()
-        if (payload):
-            values['fix_type'] = int.from_bytes(payload[0:1], byteorder='little', signed=False)
-            values['sats'] = int.from_bytes(payload[1:2], byteorder='little', signed=False)
-            values['lat'] = int.from_bytes(payload[2:6], byteorder='little', signed=True) / 10000000
-            values['lon'] = int.from_bytes(payload[6:10], byteorder='little', signed=True) / 10000000
-            values['alt'] = int.from_bytes(payload[10:12], byteorder='little', signed=True)
-            values['groundSpeed'] = int.from_bytes(payload[12:14], byteorder='little', signed=False)
-            values['groundCourse'] = int.from_bytes(payload[14:16], byteorder='little', signed=False)
-            values['hdop'] = int.from_bytes(payload[16:18], byteorder='little', signed=False) / 100
-            return values
-        else:
-            raise RuntimeError("Controller has not responded.")
+        values['fix_type'] = int.from_bytes(payload[0:1], byteorder='little', signed=False)
+        values['sats'] = int.from_bytes(payload[1:2], byteorder='little', signed=False)
+        values['lat'] = int.from_bytes(payload[2:6], byteorder='little', signed=True) / 10000000
+        values['lon'] = int.from_bytes(payload[6:10], byteorder='little', signed=True) / 10000000
+        values['alt'] = int.from_bytes(payload[10:12], byteorder='little', signed=True)
+        values['groundSpeed'] = int.from_bytes(payload[12:14], byteorder='little', signed=False)
+        values['groundCourse'] = int.from_bytes(payload[14:16], byteorder='little', signed=False)
+        values['hdop'] = int.from_bytes(payload[16:18], byteorder='little', signed=False) / 100
+        return values
+
+    def get_rc(self):
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(105))
+        payload = self.read_payload(105)
+        values = dict()
+        types = ( #channel names
+        "roll", "pitch", "throttle", "yaw",
+        "aux1", "aux2", "aux3", "aux4",
+        "aux5", "aux6", "aux7", "aux8",
+        "aux9", "aux10", "aux11", "aux12",
+        "aux12", "aux13","aux14", "aux15"
+        )
+        for i in range(len(payload)//2): #each channel is 2 bytes, so we need half of the payload lenght
+            x = i * 2
+            values[types[i]] = int.from_bytes(payload[x:x+2], byteorder='little', signed=False)#separate all channels
+        return values
+            
+    def set_raw_rc(self, channels: list):
+        payload = bytes()
+        for channel in channels:
+            payload += channel.to_bytes(2, byteorder='little')#add all channels together in one signle 'bytes' variable
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(200,payload)) # pass payload
+        self.read_payload(200)
