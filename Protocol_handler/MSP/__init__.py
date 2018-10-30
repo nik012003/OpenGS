@@ -46,7 +46,23 @@ class MSP(object):
                     return payload
         self._controller.flushInput()
         raise RuntimeError("Controller has not responded.")
-        
+    
+    def get_raw_imu(self):
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(102)) #write the command
+        payload = self.read_payload(102) # get the payload
+        values = dict()
+        values['accx'] = int.from_bytes(payload[0:2], byteorder='little', signed=True) 
+        values['accy'] = int.from_bytes(payload[2:4], byteorder='little', signed=True) 
+        values['accz'] = int.from_bytes(payload[4:6], byteorder='little', signed=True) 
+        values['gyrx'] = int.from_bytes(payload[6:8], byteorder='little', signed=True) 
+        values['gyry'] = int.from_bytes(payload[8:10], byteorder='little', signed=True) 
+        values['gyrz'] = int.from_bytes(payload[10:12], byteorder='little', signed=True) 
+        values['magx'] = int.from_bytes(payload[12:14], byteorder='little', signed=True) 
+        values['magy'] = int.from_bytes(payload[14:16], byteorder='little', signed=True) 
+        values['magz'] = int.from_bytes(payload[16:18], byteorder='little', signed=True) 
+        return values
+    
     def get_attitude(self):
         self._controller.flushInput()
         self._controller.write(self.construct_payload(108)) #write the command
@@ -89,7 +105,38 @@ class MSP(object):
             x = i * 2
             values[types[i]] = int.from_bytes(payload[x:x+2], byteorder='little', signed=False)#separate all channels
         return values
-            
+    
+    def get_wp(self, wp_number : int):
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(118,wp_number.to_bytes(1, byteorder='little')))
+        payload = self.read_payload(118)
+        values = dict()
+        values['number'] = int.from_bytes(payload[0:1], byteorder='little', signed=False)
+        values['action'] = int.from_bytes(payload[1:2], byteorder='little', signed=False)
+        values['lat'] = int.from_bytes(payload[2:6], byteorder='little', signed=True) / 10000000
+        values['lon'] = int.from_bytes(payload[6:10], byteorder='little', signed=True) / 10000000
+        values['alt'] = int.from_bytes(payload[10:14], byteorder='little', signed=True)
+        values['p1'] = int.from_bytes(payload[14:16], byteorder='little', signed=False)
+        values['p2'] = int.from_bytes(payload[16:18], byteorder='little', signed=False)
+        values['p3'] = int.from_bytes(payload[18:20], byteorder='little', signed=False)
+        values['flags'] = int.from_bytes(payload[20:21], byteorder='little', signed=False)
+        return values
+    
+    def set_wp(self, wp_number,action,lat,lon,alt,p1,p2,p3,flag : int): #not yet working...
+        payload = bytes()
+        payload += wp_number.to_bytes(1, byteorder='little')
+        payload += action.to_bytes(1, byteorder='little')#action
+        payload += lat.to_bytes(4, byteorder='little')#lat
+        payload += lon.to_bytes(4, byteorder='little')#lon
+        payload += alt.to_bytes(4, byteorder='little')#to set altitude (cm)
+        payload += p1.to_bytes(2, byteorder='little')#P1
+        payload += p1.to_bytes(2, byteorder='little')#P2
+        payload += p1.to_bytes(2, byteorder='little')#P3
+        payload += flag.to_bytes(1, byteorder='little')#P3
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(209,payload)) # pass payload
+        self.read_payload(209)
+        
     def set_raw_rc(self, channels: list):
         payload = bytes()
         for channel in channels:
