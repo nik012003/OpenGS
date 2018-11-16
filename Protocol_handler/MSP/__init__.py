@@ -4,7 +4,36 @@
 
 #
 from serial import Serial
+import time
+from threading import Event, Thread
 #
+
+class RepeatedTimer:
+    #Repeat `function` every `interval` seconds made by shlapion (https://github.com/shlapion)
+    def __init__(self, interval, function, *args, **kwargs):
+        self.interval = interval
+        self.function = function
+        self.args = args
+        self.kwargs = kwargs
+        self.start = time.time()
+        self.event = Event()
+        self.thread = Thread(target=self._target)
+
+    def startTimer(self):
+        self.thread.start()
+
+    def _target(self):
+        while not self.event.wait(self._time):
+            self.function(*self.args, **self.kwargs)
+
+    @property
+    def _time(self):
+        return self.interval - ((time.time() - self.start) % self.interval)
+
+    def stopTimer(self):
+        self.event.set()
+        self.thread.join()
+
 class MSP(object):
     def __init__(self, controller: Serial):
         self._controller = controller
@@ -46,7 +75,16 @@ class MSP(object):
                     return payload
         self._controller.flushInput()
         raise RuntimeError("Controller has not responded.")
-    
+    def get_status(self):
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(150)) #write the command
+        payload = self.read_payload(150) # get the payload
+        values = dict()
+        values['cpu_load'] = int.from_bytes(payload[0:2], byteorder='little', signed=False) 
+        values['arming_flags'] = int.from_bytes(payload[2:4], byteorder='little', signed=False) 
+        values['calibration_axis_flags'] = int.from_bytes(payload[4:5], byteorder='little', signed=False) 
+        return values
+        
     def get_raw_imu(self):
         self._controller.flushInput()
         self._controller.write(self.construct_payload(102)) #write the command
@@ -122,12 +160,12 @@ class MSP(object):
         values['flags'] = int.from_bytes(payload[20:21], byteorder='little', signed=False)
         return values
     
-    def set_wp(self, wp_number,action,lat,lon,alt,p1,p2,p3,flag : int): #not yet working...
+    def set_wp(self, wp_number,action,lat,lon,alt,p1,p2,p3,flag : int):
         payload = bytes()
         payload += wp_number.to_bytes(1, byteorder='little')
         payload += action.to_bytes(1, byteorder='little')#action
-        payload += lat.to_bytes(4, byteorder='little')#lat
-        payload += lon.to_bytes(4, byteorder='little')#lon
+        payload += int(lat * 10000000).to_bytes(4, byteorder='little')#lat 
+        payload += int(lon * 10000000).to_bytes(4, byteorder='little')#lon
         payload += alt.to_bytes(4, byteorder='little')#to set altitude (cm)
         payload += p1.to_bytes(2, byteorder='little')#P1
         payload += p1.to_bytes(2, byteorder='little')#P2
@@ -144,3 +182,19 @@ class MSP(object):
         self._controller.flushInput()
         self._controller.write(self.construct_payload(200,payload)) # pass payload
         self.read_payload(200)
+
+    def start_threaded_rc(self,refreshRate): #refreshrate in Hertz. Start sending data to MSP_RX every x seconds.
+      global timer, secondsPeriod
+      secondsPeriod = 1 / refreshRate #calculate Hz to seconds(period)
+      timer = RepeatedTimer(secondsPeriod,self.set_raw_rc,[1500,1500,1000,1500,1000,1000,1000,1000]) #set the timer
+      timer.startTimer() #stop the timer
+        
+    def set_threaded_rc(self,channels: list): #change the data beeing sent
+      global timer, secondsPeriod
+      timer.stopTimer() #stop the timer
+      timer = RepeatedTimer(secondsPeriod,self.set_raw_rc,channels)#set the timer with the new channel values
+      timer.startTimer()#restat the timer
+    
+    def stop_threaded_rc(self): #stops the timer
+      global timer
+      timer.stopTimer()
