@@ -160,6 +160,17 @@ class MSP(object):
         values['flags'] = int.from_bytes(payload[20:21], byteorder='little', signed=False)
         return values
     
+    def get_analog(self):
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(110))
+        payload = self.read_payload(110)
+        values = dict()
+        values['battery_voltage'] = int.from_bytes(payload[0:1], byteorder='little', signed=False) #vbat
+        values['mah_drawn'] = int.from_bytes(payload[1:3], byteorder='little', signed=False) #mah drawn
+        values['rssi'] = int.from_bytes(payload[3:5], byteorder='little', signed=False) #rssi
+        values['amp'] = int.from_bytes(payload[5:7], byteorder='little', signed=True) #current Amp draw
+        return values
+
     def set_wp(self, wp_number,action,lat,lon,alt,p1,p2,p3,flag : int):
         payload = bytes()
         payload += wp_number.to_bytes(1, byteorder='little')
