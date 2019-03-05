@@ -8,6 +8,12 @@ import time
 from threading import Event, Thread
 #
 
+mappable_channels = { b'\x00' : "throttle",
+        b'\x01' : "pitch",
+        b'\x02' : "roll",
+        b'\x03' : "yaw",
+}
+
 class RepeatedTimer:
     #Repeat `function` every `interval` seconds made by shlapion (https://github.com/shlapion)
     def __init__(self, interval, function, *args, **kwargs):
@@ -127,13 +133,22 @@ class MSP(object):
         values['hdop'] = int.from_bytes(payload[16:18], byteorder='little', signed=False) / 100
         return values
 
-    def get_rc(self):
+    def get_channel_map(self):
+        self._controller.flushInput()
+        self._controller.write(self.construct_payload(64))
+        payload = self.read_payload(64)
+        values = []
+        for i in range(len(payload)):
+            values.append(mappable_channels[payload[i:i+1]])
+        return  values
+
+    def get_rc(self, channel_map = ["throttle","yaw","pitch","roll"]):
         self._controller.flushInput()
         self._controller.write(self.construct_payload(105))
         payload = self.read_payload(105)
         values = dict()
         types = ( #channel names
-        "roll", "pitch", "throttle", "yaw",
+        channel_map[0],  channel_map[1],  channel_map[2],  channel_map[3],
         "aux1", "aux2", "aux3", "aux4",
         "aux5", "aux6", "aux7", "aux8",
         "aux9", "aux10", "aux11", "aux12",
